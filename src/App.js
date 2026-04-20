@@ -254,7 +254,7 @@ export default function App() {
         .hero-img {
           position:absolute; inset:0; z-index:0;
           background: url('${BG_IMAGE}') center/cover no-repeat;
-          filter: brightness(0.2) saturate(1.8) contrast(1.1);
+          filter: brightness(0.45) saturate(1.4) contrast(0.95);
           animation: kenBurns 24s ease-in-out infinite alternate;
           transform-origin: center;
         }
