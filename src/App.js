@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const BG_IMAGE = "/faded_gallery-GuB2CI8-8JM-unsplash.jpg";
+const BG_IMAGE = "/ilgmyzin-UkxqiLGyv0o-unsplash.jpg";
 
 const buildSystemPrompt = (resumeText) => `You are an expert resume writer and ATS optimization specialist. You have been given a person's resume. When given a job description, you:
 1. Extract ALL mandatory skills, keywords, and requirements from the JD
