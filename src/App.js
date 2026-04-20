@@ -38,7 +38,7 @@ RULES: Never invent experience. Reframe only. Keep dates/companies accurate. \\v
 
 RESUME: ${resumeText}`;
 
-const MARQUEE = ["ATS Optimised","Keyword Matched","Any Industry","Any Role","Free","Powered by Claude AI","Upload Any Resume","Tailored in 20 Seconds","Jake Gutierrez Template","LaTeX Output"];
+const MARQUEE = ["ATS Optimised","Keyword Matched","Any Industry","Any Role","Free","Created by Suraj","Upload Any Resume","Tailored in 20 Seconds","Jake Gutierrez Template","LaTeX Output"];
 
 export default function App() {
   const [resumeText, setResumeText] = useState("");
