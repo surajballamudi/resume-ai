@@ -38,7 +38,7 @@ RULES: Never invent experience. Reframe only. Keep dates/companies accurate. \\v
 
 RESUME: ${resumeText}`;
 
-const MARQUEE = ["ATS Optimised","Keyword Matched","Jake Gutierrez Template","Any Industry","Any Role","Free to Use","Powered by Claude AI","Upload Any Resume","Tailored in 20 Seconds","Get LaTeX Output"];
+const MARQUEE = ["ATS Optimised","Keyword Matched","Any Industry","Any Role","Free","Powered by Claude AI","Upload Any Resume","Tailored in 20 Seconds","Jake Gutierrez Template","LaTeX Output"];
 
 export default function App() {
   const [resumeText, setResumeText] = useState("");
@@ -54,16 +54,48 @@ export default function App() {
   const [visibleKw, setVisibleKw] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const [dots, setDots] = useState(0);
-  const [heroIn, setHeroIn] = useState(false);
+  const [scrollY, setScrollY] = useState(0);
+  const [heroLoaded, setHeroLoaded] = useState(false);
+  const [sectionsVisible, setSectionsVisible] = useState({});
+  const [processingPhase, setProcessingPhase] = useState("analyzing");
   const fileRef = useRef(null);
 
-  useEffect(() => { setTimeout(() => setHeroIn(true), 100); }, []);
   useEffect(() => {
-    if (loading) { const t = setInterval(() => setDots(d => (d+1)%4), 380); return () => clearInterval(t); }
+    // Staggered hero entrance
+    setTimeout(() => setHeroLoaded(true), 100);
+  }, []);
+
+  useEffect(() => {
+    const fn = () => setScrollY(window.scrollY);
+    window.addEventListener("scroll", fn, { passive: true });
+    return () => window.removeEventListener("scroll", fn);
+  }, []);
+
+  useEffect(() => {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) setSectionsVisible(v => ({ ...v, [e.target.dataset.id]: true }));
+      });
+    }, { threshold: 0.12 });
+    setTimeout(() => {
+      document.querySelectorAll("[data-id]").forEach(el => obs.observe(el));
+    }, 100);
+    return () => obs.disconnect();
+  }, [step]);
+
+  useEffect(() => {
+    if (loading) {
+      const t = setInterval(() => setDots(d => (d + 1) % 4), 400);
+      return () => clearInterval(t);
+    }
   }, [loading]);
+
   useEffect(() => {
-    if (keywords.length > 0) keywords.forEach((_, i) => setTimeout(() => setVisibleKw(v => [...v, i]), i * 75));
-    else setVisibleKw([]);
+    if (keywords.length > 0) {
+      keywords.forEach((_, i) => setTimeout(() => setVisibleKw(v => [...v, i]), i * 60));
+    } else {
+      setVisibleKw([]);
+    }
   }, [keywords]);
 
   const processFile = async (file) => {
@@ -76,20 +108,19 @@ export default function App() {
           const base64 = ev.target.result.split(",")[1];
           try {
             const res = await fetch("/api/tailor", {
-              method:"POST",
-              headers:{"Content-Type":"application/json"},
+              method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                model:"claude-sonnet-4-20250514", max_tokens:2000,
-                messages:[{role:"user",content:[
-                  {type:"document",source:{type:"base64",media_type:"application/pdf",data:base64}},
-                  {type:"text",text:"Extract all text from this resume. Raw text only, preserve structure. No commentary."}
+                model: "claude-sonnet-4-20250514", max_tokens: 2000,
+                messages: [{ role: "user", content: [
+                  { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+                  { type: "text", text: "Extract all text from this resume. Raw text only, preserve structure. No commentary." }
                 ]}]
               })
             });
             const data = await res.json();
             if (data.error) throw new Error(data.error.message);
             setResumeText(data.content[0].text);
-          } catch(err) { setError("PDF read failed: "+err.message); }
+          } catch(err) { setError("PDF read failed: " + err.message); }
           finally { setExtracting(false); }
         };
         reader.readAsDataURL(file);
@@ -102,372 +133,630 @@ export default function App() {
   const handleDrop = (e) => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0]); };
 
   const extractKw = (text) => {
-    const stop = new Set(["and","the","to","of","in","a","an","with","for","is","are","will","be","as","by","on","at","from","that","this","we","you","our","your","have","has","can","must","should","would","who","all","any","not","but","or","if","its","they","been","were","was","also","about","more","work","role","team","experience","years","strong","skills","knowledge","using","ensure","provide","support","manage"]);
-    const words = text.match(/\b[A-Za-z][A-Za-z0-9+#.\/-]{2,}\b/g)||[];
+    const stop = new Set(["and","the","to","of","in","a","an","with","for","is","are","will","be","as","by","on","at","from","that","this","we","you","our","your","have","has","can","must","should","would","who","all","any","not","but","or","if","its","they","been","were","was","also","about","more","work","role","team","experience","years","strong","skills","knowledge","using","ensure","provide","support","manage","ability","good","well","working","highly","new","including","such","other","within","across","between","through","during","before","after","over","under","both","each","few","more","most","some","such","no","nor","not","only","same","so","than","too","very","just","because","while","although","however","therefore","thus","hence","moreover","furthermore","additionally","consequently"]);
+    const words = text.match(/\b[A-Za-z][A-Za-z0-9+#.\/-]{2,}\b/g) || [];
     const freq = {};
-    words.forEach(w => { const l=w.toLowerCase(); if(!stop.has(l)) freq[l]=(freq[l]||0)+1; });
-    return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([w])=>w);
+    words.forEach(w => { const l = w.toLowerCase(); if (!stop.has(l) && l.length > 2) freq[l] = (freq[l] || 0) + 1; });
+    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 28).map(([w]) => w);
   };
 
   const tailor = async () => {
-    if (!jd.trim()||!resumeText) return;
-    setLoading(true); setError(""); setOutput(""); setStep("analyzing");
-    setKeywords(extractKw(jd));
-    await new Promise(r=>setTimeout(r,1100));
-    setStep("writing");
+    if (!jd.trim() || !resumeText) return;
+    setLoading(true); setError(""); setOutput(""); setStep("processing");
+    setProcessingPhase("analyzing");
+    const kws = extractKw(jd);
+    setKeywords(kws);
+    await new Promise(r => setTimeout(r, 1400));
+    setProcessingPhase("writing");
     try {
       const res = await fetch("/api/tailor", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:4096,
+          model: "claude-sonnet-4-20250514", max_tokens: 4096,
           system: buildSystemPrompt(resumeText),
-          messages:[{role:"user",content:`Tailor this resume for the JD. ONLY LaTeX:\n\n${jd}`}]
+          messages: [{ role: "user", content: `Tailor this resume for the JD. ONLY LaTeX:\n\n${jd}` }]
         })
       });
-      if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e?.error?.message||`Error ${res.status}`); }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `Error ${res.status}`); }
       const data = await res.json();
-      const text = data.content?.[0]?.text||"";
-      const s=text.indexOf("\\documentclass"), e=text.lastIndexOf("\\end{document}");
-      setOutput(s!==-1&&e!==-1?text.slice(s,e+14):text);
+      const text = data.content?.[0]?.text || "";
+      const s = text.indexOf("\\documentclass"), e = text.lastIndexOf("\\end{document}");
+      setOutput(s !== -1 && e !== -1 ? text.slice(s, e + 14) : text);
       setStep("done");
-    } catch(e) { setError(e.message||"Something went wrong."); setStep("idle"); }
+    } catch(e) { setError(e.message || "Something went wrong."); setStep("idle"); }
     finally { setLoading(false); }
   };
 
-  const copy = () => { navigator.clipboard.writeText(output).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);}); };
+  const copy = () => {
+    navigator.clipboard.writeText(output).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); });
+  };
   const reset = () => { setJd(""); setOutput(""); setStep("idle"); setKeywords([]); setVisibleKw([]); setError(""); };
   const resetAll = () => { reset(); setResumeText(""); setResumeFileName(""); };
-
-  const F = "'Fraunces', serif";
-  const S = "'DM Sans', sans-serif";
+  const vis = (id) => sectionsVisible[id] ? "v" : "";
 
   return (
-    <div style={{minHeight:"100vh",background:"#000",color:"#fff",fontFamily:S,overflowX:"hidden"}}>
+    <div style={{ minHeight: "100vh", background: "#020202", color: "#fff", fontFamily: "'Cormorant Garamond', serif", overflowX: "hidden" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,300;1,9..144,700;1,9..144,900&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
-        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-        @keyframes kwPop{from{opacity:0;transform:scale(0.8) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}
-        @keyframes loadSlide{0%{left:-50%}100%{left:110%}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
-        @keyframes borderGlow{0%,100%{border-color:rgba(255,255,255,0.1)}50%{border-color:rgba(255,220,150,0.4)}}
-        @keyframes bgPan{0%{background-position:20% 40%}50%{background-position:80% 60%}100%{background-position:20% 40%}}
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=Jost:wght@200;300;400;500&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { background: #020202; }
 
-        .bg-hero{position:fixed;inset:0;z-index:0;background:url('${BG_IMAGE}') center/cover no-repeat;filter:brightness(0.28) saturate(1.6) contrast(1.1);animation:bgPan 20s ease-in-out infinite;background-size:140%;}
-        .bg-vignette{position:fixed;inset:0;z-index:1;background:radial-gradient(ellipse at 50% 30%,rgba(0,0,0,0) 0%,rgba(0,0,0,0.5) 50%,rgba(0,0,0,0.9) 100%);}
-        .bg-grad{position:fixed;inset:0;z-index:2;background:linear-gradient(to bottom,rgba(0,0,0,0.1) 0%,rgba(0,0,0,0.6) 55%,rgba(0,0,0,0.97) 90%);}
+        @keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
+        @keyframes riseUp   { from { opacity:0; transform:translateY(48px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes riseUpSm { from { opacity:0; transform:translateY(24px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes slideRight { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+        @keyframes marquee  { from { transform:translateX(0) } to { transform:translateX(-50%) } }
+        @keyframes kenBurns { 0% { transform:scale(1) translate(0,0) } 100% { transform:scale(1.1) translate(-3%,-2%) } }
+        @keyframes loadBar  { 0% { left:-45% } 100% { left:110% } }
+        @keyframes kwIn     { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes pulse    { 0%,100% { opacity:1 } 50% { opacity:0.25 } }
+        @keyframes lineGrow { from { height:0 } to { height:56px } }
+        @keyframes curtainDown { from { transform:scaleY(1) } to { transform:scaleY(0) } }
 
-        .pill-nav{position:fixed;top:22px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,0.75);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);border:1px solid rgba(255,230,150,0.18);border-radius:999px;display:flex;align-items:center;gap:4px;padding:5px 6px;z-index:200;box-shadow:0 8px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,230,150,0.1);}
-        .pill-logo{font-family:'Fraunces',serif;font-size:17px;font-weight:700;color:#fff;padding:6px 16px;letter-spacing:-0.01em;font-style:italic;}
-        .pill-cta{background:linear-gradient(135deg,#f5c842,#e8934a,#d4637a);color:#1a0f00;border:none;padding:8px 22px;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.25s;}
-        .pill-cta:hover{transform:scale(1.04);box-shadow:0 4px 20px rgba(245,200,66,0.4)}
-        .pill-ghost{background:transparent;color:rgba(255,255,255,0.5);border:none;padding:8px 14px;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all 0.2s;}
-        .pill-ghost:hover{color:#fff;background:rgba(255,255,255,0.07)}
+        /* Scroll-reveal */
+        [data-id] { opacity:0; transform:translateY(32px); transition: opacity 1s cubic-bezier(0.16,1,0.3,1), transform 1s cubic-bezier(0.16,1,0.3,1); }
+        [data-id].v { opacity:1; transform:translateY(0); }
 
-        .sdot{width:7px;height:7px;border-radius:50%;display:inline-block;}
-        .dgreen{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,0.8);animation:pulse 2s ease-in-out infinite;}
+        /* Nav */
+        .nav {
+          position:fixed; top:0; left:0; right:0; z-index:200;
+          display:flex; justify-content:space-between; align-items:center;
+          padding:32px 56px;
+          transition: padding 0.5s cubic-bezier(0.16,1,0.3,1), background 0.5s, border-color 0.5s;
+          border-bottom: 1px solid transparent;
+        }
+        .nav.s {
+          padding:18px 56px;
+          background: rgba(2,2,2,0.94);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-bottom-color: rgba(255,255,255,0.05);
+        }
+        .nav-logo {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 16px; font-weight: 300; letter-spacing: 0.35em;
+          text-transform: uppercase; color: #fff; cursor: pointer;
+          font-style: italic;
+        }
+        .nav-r { display:flex; align-items:center; gap:36px; }
+        .nl {
+          font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 300;
+          letter-spacing: 0.22em; text-transform: uppercase;
+          color: rgba(255,255,255,0.38); cursor: pointer; background: none;
+          border: none; padding: 4px 0; position: relative;
+          transition: color 0.3s;
+        }
+        .nl::after {
+          content: ''; position:absolute; bottom:-2px; left:0; right:0;
+          height:1px; background:#fff; transform:scaleX(0); transform-origin:left;
+          transition:transform 0.3s cubic-bezier(0.16,1,0.3,1);
+        }
+        .nl:hover { color:#fff; }
+        .nl:hover::after { transform:scaleX(1); }
+        .n-cta {
+          font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 400;
+          letter-spacing: 0.22em; text-transform: uppercase; color:#fff;
+          border: 1px solid rgba(255,255,255,0.3); padding: 11px 28px;
+          cursor:pointer; background:transparent;
+          transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.2s;
+        }
+        .n-cta:hover { background:#fff; color:#000; border-color:#fff; transform: translateY(-1px); }
+        .n-cta:active { transform: translateY(0) scale(0.98); }
 
-        textarea,input[type=password],input[type=text]{background:rgba(255,255,255,0.06);border:1px solid rgba(255,230,150,0.18);color:#fff;padding:14px 18px;font-size:14px;line-height:1.65;width:100%;font-family:'DM Sans',sans-serif;outline:none;transition:all 0.3s;border-radius:14px;}
-        textarea{resize:vertical;}
-        textarea:focus,input:focus{border-color:rgba(245,200,66,0.5);background:rgba(255,230,150,0.06);box-shadow:0 0 0 3px rgba(245,200,66,0.08);}
-        textarea::placeholder,input::placeholder{color:rgba(255,255,255,0.2);font-style:italic}
+        /* Hero */
+        .hero {
+          position:relative; height:100vh; min-height:640px;
+          display:flex; flex-direction:column; justify-content:flex-end;
+          padding:0 56px 80px;
+          overflow:hidden;
+        }
+        .hero-img {
+          position:absolute; inset:0; z-index:0;
+          background: url('${BG_IMAGE}') center/cover no-repeat;
+          filter: brightness(0.2) saturate(1.8) contrast(1.1);
+          animation: kenBurns 24s ease-in-out infinite alternate;
+          transform-origin: center;
+        }
+        .hero-ov {
+          position:absolute; inset:0; z-index:1;
+          background: linear-gradient(to top, rgba(2,2,2,1) 0%, rgba(2,2,2,0.55) 35%, rgba(2,2,2,0.1) 70%, transparent 100%);
+        }
+        .hero-body { position:relative; z-index:2; }
 
-        .btn-gold{background:linear-gradient(135deg,#f5c842 0%,#e8934a 60%,#d4637a 100%);color:#1a0a00;border:none;padding:16px 44px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;letter-spacing:-0.01em;cursor:pointer;border-radius:999px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);display:inline-flex;align-items:center;gap:10px;box-shadow:0 4px 30px rgba(245,200,66,0.25);}
-        .btn-gold:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 10px 40px rgba(245,200,66,0.35)}
-        .btn-gold:active:not(:disabled){transform:scale(0.98)}
-        .btn-gold:disabled{opacity:0.3;cursor:not-allowed}
-        .btn-gold .arr{width:26px;height:26px;background:rgba(0,0,0,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;transition:transform 0.2s;}
-        .btn-gold:hover .arr{transform:rotate(45deg)}
+        .h-eye {
+          font-family: 'Jost', sans-serif; font-size:10px; font-weight:300;
+          letter-spacing:0.32em; text-transform:uppercase;
+          color:rgba(255,255,255,0.3); margin-bottom:22px;
+          opacity:0; animation:fadeIn 1s 0.6s both;
+        }
+        .h-title {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: clamp(60px,9vw,128px); font-weight:300;
+          line-height:0.87; letter-spacing:-0.015em; color:#fff;
+          margin-bottom:44px;
+          opacity:0; animation:riseUp 1.3s 0.8s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        .h-title em { font-style:italic; }
+        .h-foot {
+          display:flex; justify-content:space-between; align-items:flex-end;
+          opacity:0; animation:fadeIn 1s 1.4s both;
+        }
+        .h-desc {
+          font-family:'Jost',sans-serif; font-size:13px; font-weight:300;
+          letter-spacing:0.05em; color:rgba(255,255,255,0.38);
+          line-height:1.9; max-width:380px;
+        }
+        .h-scroll {
+          display:flex; flex-direction:column; align-items:center; gap:14px;
+          font-family:'Jost',sans-serif; font-size:9px; font-weight:300;
+          letter-spacing:0.28em; text-transform:uppercase;
+          color:rgba(255,255,255,0.22);
+        }
+        .scroll-l { width:1px; transform-origin:top; animation:lineGrow 1.2s 1.8s cubic-bezier(0.16,1,0.3,1) both; background:rgba(255,255,255,0.18); }
 
-        .btn-wire{background:transparent;color:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.2);padding:14px 28px;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;}
-        .btn-wire:hover{color:#fff;border-color:rgba(255,230,150,0.4);background:rgba(255,230,150,0.05)}
+        /* Divider */
+        .div { width:100%; height:1px; background:rgba(255,255,255,0.06); }
 
-        .btn-cp{background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);padding:12px 28px;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.25s;}
-        .btn-cp:hover{background:rgba(255,230,150,0.12);border-color:rgba(245,200,66,0.4)}
-        .btn-cp.done{background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.4);color:#4ade80}
+        /* Marquee */
+        .mq { overflow:hidden; border-top:1px solid rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.05); padding:14px 0; }
+        .mq-track { display:flex; white-space:nowrap; animation:marquee 30s linear infinite; }
+        .mq-item { padding:0 44px; font-family:'Jost',sans-serif; font-size:9px; font-weight:300; letter-spacing:0.26em; text-transform:uppercase; color:rgba(255,255,255,0.16); }
+        .mq-sep { color:rgba(255,255,255,0.1); padding:0 4px; font-size:5px; }
 
-        .upload-zone{border:1.5px dashed rgba(255,230,150,0.2);border-radius:20px;padding:64px 40px;text-align:center;cursor:pointer;background:rgba(255,255,255,0.03);transition:all 0.35s cubic-bezier(0.16,1,0.3,1);animation:borderGlow 3.5s ease-in-out infinite;}
-        .upload-zone:hover,.upload-zone.drag{border-color:rgba(245,200,66,0.6);background:rgba(245,200,66,0.05);animation:none;transform:scale(1.006);box-shadow:0 0 40px rgba(245,200,66,0.1);}
-        .upload-zone.loaded{border-style:solid;border-color:rgba(74,222,128,0.4);background:rgba(74,222,128,0.05);animation:none;}
+        /* Section labels */
+        .lbl {
+          font-family:'Jost',sans-serif; font-size:9px; font-weight:300;
+          letter-spacing:0.3em; text-transform:uppercase; color:rgba(255,255,255,0.22);
+          display:flex; align-items:center; gap:18px; margin-bottom:28px;
+        }
+        .lbl::before { content:''; display:block; width:28px; height:1px; background:rgba(255,255,255,0.18); flex-shrink:0; }
 
-        .step-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,230,150,0.1);border-radius:18px;padding:28px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);backdrop-filter:blur(10px);}
-        .step-card:hover{background:rgba(255,230,150,0.06);border-color:rgba(245,200,66,0.3);transform:translateY(-4px);box-shadow:0 20px 50px rgba(0,0,0,0.4),0 0 30px rgba(245,200,66,0.08);}
+        /* Display type */
+        .dt {
+          font-family:'Cormorant Garamond',serif;
+          font-size:clamp(36px,4.5vw,68px);
+          font-weight:300; line-height:0.95; letter-spacing:-0.01em; color:#fff;
+        }
+        .dt em { font-style:italic; }
+        .bt {
+          font-family:'Jost',sans-serif; font-size:13px; font-weight:300;
+          letter-spacing:0.04em; color:rgba(255,255,255,0.35); line-height:1.9;
+        }
 
-        .kw-chip{display:inline-block;background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);color:rgba(255,230,150,0.8);padding:5px 15px;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;margin:3px;animation:kwPop 0.35s cubic-bezier(0.16,1,0.3,1) both;transition:all 0.2s;}
-        .kw-chip:hover{background:rgba(245,200,66,0.15);border-color:rgba(245,200,66,0.5);color:#f5c842;transform:translateY(-1px)}
+        /* Buttons */
+        .bp {
+          font-family:'Jost',sans-serif; font-size:10px; font-weight:400;
+          letter-spacing:0.22em; text-transform:uppercase;
+          color:#000; background:#fff; border:none;
+          padding:15px 48px; cursor:pointer;
+          display:inline-flex; align-items:center; gap:18px;
+          transition: background 0.25s, transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s;
+          position:relative; overflow:hidden;
+        }
+        .bp::after {
+          content:''; position:absolute; inset:0;
+          background:rgba(0,0,0,0.08);
+          transform:translateX(-100%); transition:transform 0.3s;
+        }
+        .bp:hover::after { transform:translateX(0); }
+        .bp:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 12px 40px rgba(255,255,255,0.12); }
+        .bp:active:not(:disabled) { transform:translateY(0) scale(0.99); }
+        .bp:disabled { opacity:0.2; cursor:not-allowed; }
+        .bp-ln { width:22px; height:1px; background:#000; transition:width 0.3s; flex-shrink:0; }
+        .bp:hover:not(:disabled) .bp-ln { width:38px; }
 
-        .marquee-wrap{overflow:hidden;border-top:1px solid rgba(255,230,150,0.08);border-bottom:1px solid rgba(255,230,150,0.08);padding:13px 0;}
-        .marquee-track{display:flex;white-space:nowrap;animation:marquee 22s linear infinite}
-        .marquee-item{padding:0 28px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:rgba(255,255,255,0.25);letter-spacing:0.07em;text-transform:uppercase;}
-        .marquee-sep{color:rgba(245,200,66,0.35);padding:0 4px;}
+        .bs {
+          font-family:'Jost',sans-serif; font-size:10px; font-weight:300;
+          letter-spacing:0.2em; text-transform:uppercase;
+          color:rgba(255,255,255,0.45); background:transparent;
+          border:1px solid rgba(255,255,255,0.15); padding:13px 32px;
+          cursor:pointer;
+          transition:color 0.25s, border-color 0.25s, background 0.25s, transform 0.2s;
+        }
+        .bs:hover { color:#fff; border-color:rgba(255,255,255,0.45); background:rgba(255,255,255,0.04); transform:translateY(-1px); }
+        .bs:active { transform:translateY(0) scale(0.98); }
 
-        .shimmer-gold{background:linear-gradient(90deg,rgba(245,200,66,0.6) 0%,#fff 40%,rgba(245,200,66,1) 60%,rgba(232,147,74,0.8) 80%,rgba(245,200,66,0.6) 100%);background-size:300% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 3s linear infinite;}
+        .bcp {
+          font-family:'Jost',sans-serif; font-size:10px; font-weight:300;
+          letter-spacing:0.2em; text-transform:uppercase;
+          color:rgba(255,255,255,0.45); background:transparent;
+          border:1px solid rgba(255,255,255,0.15); padding:13px 36px;
+          cursor:pointer;
+          transition:all 0.25s; 
+        }
+        .bcp:hover { color:#fff; border-color:rgba(255,255,255,0.45); transform:translateY(-1px); }
+        .bcp:active { transform:scale(0.98); }
+        .bcp.ok { color:#4ade80; border-color:rgba(74,222,128,0.35); }
 
-        .load-bar{height:1px;background:rgba(255,255,255,0.06);border-radius:999px;overflow:hidden;position:relative;margin:28px 0;}
-        .load-fill{position:absolute;top:0;height:100%;width:45%;border-radius:999px;background:linear-gradient(90deg,transparent,#f5c842,#e8934a,transparent);animation:loadSlide 1.5s ease-in-out infinite;}
+        /* Upload */
+        .uz {
+          border:1px solid rgba(255,255,255,0.1);
+          padding:88px 40px; text-align:center; cursor:pointer;
+          transition:all 0.4s cubic-bezier(0.16,1,0.3,1);
+          background:transparent; position:relative;
+        }
+        .uz::before {
+          content:''; position:absolute; inset:0;
+          background:radial-gradient(ellipse at 50% 60%,rgba(255,255,255,0.025) 0%,transparent 70%);
+          opacity:0; transition:opacity 0.4s;
+        }
+        .uz:hover::before,.uz.dg::before { opacity:1; }
+        .uz:hover,.uz.dg { border-color:rgba(255,255,255,0.3); }
+        .uz.ld { border-color:rgba(74,222,128,0.3); background:rgba(74,222,128,0.02); }
 
-        .code-out{background:rgba(0,0,0,0.75);border:1px solid rgba(255,230,150,0.1);color:#94a3b8;padding:28px;border-radius:16px;font-family:'Fira Code','Cascadia Code',monospace;font-size:11px;line-height:1.75;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow-y:auto;backdrop-filter:blur(10px);}
-        .code-out::-webkit-scrollbar{width:3px}
-        .code-out::-webkit-scrollbar-thumb{background:rgba(245,200,66,0.25);border-radius:2px}
+        /* Process grid */
+        .pg { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:rgba(255,255,255,0.05); }
+        .pi {
+          background:#020202; padding:44px 32px 40px;
+          transition:background 0.3s;
+          cursor:default;
+        }
+        .pi:hover { background:#0c0c0c; }
+        .pi-n {
+          font-family:'Cormorant Garamond',serif; font-size:clamp(88px,9vw,130px);
+          font-weight:300; font-style:italic; color:rgba(255,255,255,0.03);
+          line-height:1; margin-bottom:-16px; user-select:none;
+        }
+        .pi-label { font-family:'Jost',sans-serif; font-size:9px; font-weight:300; letter-spacing:0.28em; text-transform:uppercase; color:rgba(255,255,255,0.2); margin-bottom:14px; }
+        .pi-title { font-family:'Cormorant Garamond',serif; font-size:22px; font-weight:300; color:#fff; margin-bottom:14px; letter-spacing:0.02em; }
+        .pi-body { font-family:'Jost',sans-serif; font-size:12px; font-weight:300; letter-spacing:0.03em; color:rgba(255,255,255,0.3); line-height:1.85; }
 
-        .slabel{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;color:rgba(255,230,150,0.4);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:18px;}
+        /* Keywords — VAST display */
+        .kw-flow {
+          display:flex; flex-wrap:wrap; gap:10px 12px;
+        }
+        .kw-t {
+          font-family:'Jost',sans-serif; font-size:10px; font-weight:300;
+          letter-spacing:0.18em; text-transform:uppercase;
+          color:rgba(255,255,255,0.3);
+          border:1px solid rgba(255,255,255,0.1);
+          padding:8px 20px;
+          transition:color 0.25s, border-color 0.25s, transform 0.2s;
+          animation:kwIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+          cursor:default;
+        }
+        .kw-t:hover { color:rgba(255,255,255,0.7); border-color:rgba(255,255,255,0.3); transform:translateY(-1px); }
 
-        .score-float{background:rgba(8,6,4,0.75);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,230,150,0.15);border-radius:18px;padding:20px 24px;animation:float 5s ease-in-out infinite;box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+        /* Loading bar */
+        .lb { height:1px; background:rgba(255,255,255,0.05); position:relative; overflow:hidden; margin:44px 0; }
+        .lf { position:absolute; top:0; height:100%; width:40%; background:rgba(255,255,255,0.35); animation:loadBar 1.8s ease-in-out infinite; }
+
+        /* Code */
+        .cb {
+          background:#060606; border:1px solid rgba(255,255,255,0.06);
+          color:#3d4a5c; padding:32px;
+          font-family:'Fira Code','Cascadia Code',monospace;
+          font-size:11px; line-height:1.8; white-space:pre-wrap;
+          word-break:break-word; max-height:520px; overflow-y:auto;
+        }
+        .cb::-webkit-scrollbar { width:2px; }
+        .cb::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.07); }
+
+        textarea, input[type=text] {
+          background:transparent;
+          border:none; border-bottom:1px solid rgba(255,255,255,0.12);
+          color:#fff; padding:16px 0; font-size:14px; line-height:1.65;
+          width:100%; font-family:'Jost',sans-serif; font-weight:300;
+          letter-spacing:0.04em; outline:none; border-radius:0;
+          transition:border-color 0.3s;
+        }
+        textarea {
+          border:1px solid rgba(255,255,255,0.1);
+          padding:22px 26px; resize:vertical;
+          transition:border-color 0.3s, background 0.3s;
+        }
+        textarea:focus, input:focus { border-color:rgba(255,255,255,0.35); }
+        textarea:focus { background:rgba(255,255,255,0.02); }
+        textarea::placeholder, input::placeholder {
+          color:rgba(255,255,255,0.14); font-style:italic;
+          font-family:'Cormorant Garamond',serif; font-size:17px;
+        }
 
         @media(max-width:768px){
-          .hgrid{grid-template-columns:1fr!important}
-          .sgrid{grid-template-columns:1fr 1fr!important}
-          .pill-nav{width:calc(100% - 32px)}
-          .main-pad{padding:0 24px 80px!important}
-          .hero-pad{padding:110px 24px 60px!important}
-          .dgrid{grid-template-columns:1fr!important}
-          .right-cards{display:none!important}
+          .nav,.nav.s{padding:20px 24px}
+          .hero{padding:0 24px 56px}
+          .h-title{font-size:54px}
+          .h-foot{flex-direction:column;gap:28px;align-items:flex-start}
+          .pg{grid-template-columns:1fr 1fr}
+          .pi-n{font-size:80px}
+          .s-pad{padding:80px 24px!important}
+          .footer{flex-direction:column;gap:16px;text-align:center;padding:40px 24px!important}
         }
       `}</style>
 
-      <div className="bg-hero"/>
-      <div className="bg-vignette"/>
-      <div className="bg-grad"/>
+      {/* ── NAV ── */}
+      <nav className={`nav${scrollY > 30 ? " s" : ""}`}>
+        <span className="nav-logo" onClick={() => { resetAll(); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+          Resume AI
+        </span>
+        <div className="nav-r">
+          <button className="nl" onClick={() => document.getElementById("process")?.scrollIntoView({ behavior: "smooth" })}>Process</button>
+          <button className="nl" onClick={() => document.getElementById("form")?.scrollIntoView({ behavior: "smooth" })}>Begin</button>
+          <button className="n-cta" onClick={() => document.getElementById("form")?.scrollIntoView({ behavior: "smooth" })}>
+            Start Now
+          </button>
+        </div>
+      </nav>
 
-      {/* Pill Nav */}
-      <div className="pill-nav">
-        <span className="pill-logo">ResumeAI</span>
-        <button className="pill-cta" onClick={()=>document.getElementById("form-section")?.scrollIntoView({behavior:"smooth"})}>
-          Try Free
-        </button>
-        <div style={{width:34,height:34,border:"1px solid rgba(255,255,255,0.12)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <span className="sdot dgreen"/>
+      {/* ── HERO ── */}
+      <div className="hero">
+        <div className="hero-img" />
+        <div className="hero-ov" />
+        <div className="hero-body">
+          <p className="h-eye">Precision Resume Engineering — Claude AI</p>
+          <h1 className="h-title">
+            A tailored<br />resume for<br /><em>every role.</em>
+          </h1>
+          <div className="h-foot">
+            <p className="h-desc">
+              Upload your resume. Paste any job description.<br />
+              Receive a precisely tailored LaTeX resume in seconds.<br />
+              Free. No account required.
+            </p>
+            <div className="h-scroll">
+              <span>Scroll</span>
+              <div className="scroll-l" />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style={{position:"relative",zIndex:10}}>
-
-        {/* Hero */}
-        {step==="idle" && (
-          <>
-            <section className="hero-pad" style={{padding:"140px 64px 80px",maxWidth:1200,margin:"0 auto"}}>
-              <div className="hgrid" style={{display:"grid",gridTemplateColumns:"1.2fr 0.8fr",gap:64,alignItems:"center",minHeight:"62vh"}}>
-                <div>
-                  <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(255,230,150,0.2)",borderRadius:999,padding:"7px 16px",marginBottom:32,background:"rgba(255,230,150,0.05)",animation:"fadeIn 0.5s 0.1s both"}}>
-                    <span className="sdot dgreen"/>
-                    <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:"11px",fontWeight:600,color:"rgba(255,230,150,0.5)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Powered by Claude AI</span>
-                  </div>
-                  <h1 style={{fontFamily:F,fontSize:"clamp(52px,7.5vw,104px)",lineHeight:0.88,letterSpacing:"-0.02em",marginBottom:28,fontWeight:900,opacity:heroIn?1:0,transform:heroIn?"none":"translateY(32px)",transition:"all 0.9s cubic-bezier(0.16,1,0.3,1)"}}>
-                    A tailored<br/>resume for<br/><em style={{fontStyle:"italic"}}>every role.</em>
-                  </h1>
-                  <p style={{fontFamily:S,fontSize:"16px",color:"rgba(255,255,255,0.42)",lineHeight:1.8,maxWidth:380,marginBottom:44,fontWeight:400,opacity:heroIn?1:0,transform:heroIn?"none":"translateY(16px)",transition:"all 0.7s cubic-bezier(0.16,1,0.3,1) 0.2s"}}>
-                    Upload your resume, paste any job description. Claude rewrites it using the JD's exact language — maximising ATS score in seconds. Completely free.
-                  </p>
-                  <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",opacity:heroIn?1:0,transform:heroIn?"none":"translateY(12px)",transition:"all 0.6s cubic-bezier(0.16,1,0.3,1) 0.35s"}}>
-                    <button className="btn-gold" style={{fontSize:"15px",padding:"18px 44px"}} onClick={()=>document.getElementById("form-section").scrollIntoView({behavior:"smooth"})}>
-                      Get Started <div className="arr">↗</div>
-                    </button>
-                    <button className="btn-wire">How it works ↓</button>
-                  </div>
-                </div>
-
-                <div className="right-cards" style={{display:"flex",flexDirection:"column",gap:14,alignItems:"flex-end",opacity:heroIn?1:0,transform:heroIn?"none":"translateY(20px)",transition:"all 0.8s cubic-bezier(0.16,1,0.3,1) 0.3s"}}>
-                  <div className="score-float">
-                    <div style={{fontFamily:S,fontSize:"10px",fontWeight:600,color:"rgba(255,230,150,0.4)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>ATS Match Score</div>
-                    <div className="shimmer-gold" style={{fontFamily:F,fontSize:"52px",fontWeight:900,lineHeight:1}}>97%</div>
-                    <div style={{height:3,background:"rgba(255,255,255,0.08)",borderRadius:999,marginTop:12,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:"97%",background:"linear-gradient(90deg,#f5c842,#e8934a)",borderRadius:999}}/>
-                    </div>
-                  </div>
-                  <div style={{background:"rgba(8,6,4,0.7)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,230,150,0.12)",borderRadius:16,padding:"18px 22px",width:220,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
-                    <div style={{fontFamily:S,fontSize:"10px",fontWeight:600,color:"rgba(255,230,150,0.4)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Keywords Injected</div>
-                    {["SAP MM","P2P Cycle","S/4HANA","MM-FI"].map((k,i)=>(
-                      <div key={i} style={{display:"inline-block",background:"rgba(245,200,66,0.1)",border:"1px solid rgba(245,200,66,0.2)",borderRadius:999,padding:"3px 10px",margin:"2px",fontFamily:S,fontSize:"11px",color:"rgba(245,200,66,0.8)",fontWeight:500}}>{k}</div>
-                    ))}
-                  </div>
-                  <div style={{background:"rgba(74,222,128,0.08)",border:"1px solid rgba(74,222,128,0.25)",borderRadius:16,padding:"14px 20px",width:180,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
-                    <div style={{fontFamily:S,fontSize:"10px",fontWeight:600,color:"rgba(74,222,128,0.5)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>✓ Tailored in</div>
-                    <div style={{fontFamily:F,fontSize:"36px",fontWeight:900,color:"#4ade80",lineHeight:1}}>18 sec</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Marquee */}
-            <div className="marquee-wrap">
-              <div className="marquee-track">
-                {[...MARQUEE,...MARQUEE].map((t,i)=>(
-                  <span key={i}><span className="marquee-item">{t}</span><span className="marquee-sep">·</span></span>
-                ))}
-              </div>
-            </div>
-
-            {/* Steps */}
-            <section style={{padding:"80px 64px",maxWidth:1200,margin:"0 auto"}}>
-              <div className="slabel">How it works</div>
-              <div className="sgrid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                {[
-                  {n:"01",t:"Upload Resume",d:"Drop any PDF or TXT file",e:"📎"},
-                  {n:"02",t:"Paste JD",d:"Full job description text",e:"📋"},
-                  {n:"03",t:"AI Tailors",d:"Keywords injected in ~20s",e:"✨"},
-                  {n:"04",t:"Apply",d:"LaTeX → Overleaf → PDF",e:"🚀"},
-                ].map((s,i)=>(
-                  <div key={i} className="step-card">
-                    <div style={{fontSize:26,marginBottom:14}}>{s.e}</div>
-                    <div style={{fontFamily:S,fontSize:"11px",fontWeight:600,color:"rgba(245,200,66,0.5)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>{s.n}</div>
-                    <div style={{fontFamily:F,fontSize:"18px",fontWeight:700,color:"#fff",marginBottom:6}}>{s.t}</div>
-                    <div style={{fontFamily:S,fontSize:"13px",color:"rgba(255,255,255,0.3)",lineHeight:1.5,fontWeight:400}}>{s.d}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* Form */}
-            <section id="form-section" className="main-pad" style={{maxWidth:860,margin:"0 auto",padding:"20px 64px 100px"}}>
-              <div style={{marginBottom:40}}>
-                <div className="slabel">01 — Your Resume</div>
-                {!resumeText ? (
-                  <label className={`upload-zone ${dragOver?"drag":""}`} style={{display:"block"}}
-                    onDragOver={e=>{e.preventDefault();setDragOver(true)}}
-                    onDragLeave={()=>setDragOver(false)} onDrop={handleDrop}>
-                    <input ref={fileRef} type="file" accept=".pdf,.txt" onChange={e=>processFile(e.target.files[0])} style={{display:"none"}}/>
-                    {extracting ? (
-                      <div>
-                        <div style={{width:32,height:32,border:"2px solid rgba(255,255,255,0.08)",borderTop:"2px solid #f5c842",borderRadius:"50%",margin:"0 auto 16px",animation:"spin 0.8s linear infinite"}}/>
-                        <p className="shimmer-gold" style={{fontFamily:F,fontSize:"20px",fontWeight:700}}>Reading your resume...</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{fontSize:36,marginBottom:14}}>📎</div>
-                        <p style={{fontFamily:F,fontSize:"26px",fontWeight:700,marginBottom:8,color:"rgba(255,255,255,0.8)"}}>Drop your resume here</p>
-                        <p style={{fontFamily:S,fontSize:"13px",color:"rgba(255,255,255,0.25)",fontWeight:500}}>PDF or TXT · or click to browse</p>
-                      </div>
-                    )}
-                  </label>
-                ) : (
-                  <div className="upload-zone loaded" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"22px 28px",animation:"fadeIn 0.4s"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:16}}>
-                      <div style={{width:38,height:38,background:"rgba(74,222,128,0.12)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,border:"1px solid rgba(74,222,128,0.3)"}}>✓</div>
-                      <div>
-                        <p style={{fontFamily:S,fontSize:"11px",fontWeight:600,color:"#4ade80",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:3}}>Resume loaded</p>
-                        <p style={{fontFamily:F,fontSize:"20px",fontWeight:700,color:"#fff"}}>{resumeFileName}</p>
-                      </div>
-                    </div>
-                    <button className="btn-wire" style={{fontSize:"12px",padding:"8px 18px"}} onClick={resetAll}>Change</button>
-                  </div>
-                )}
-              </div>
-
-              <div style={{marginBottom:32}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                  <div className="slabel" style={{marginBottom:0}}>02 — Job Description</div>
-                  <span style={{fontFamily:S,fontSize:"12px",color:"rgba(255,255,255,0.18)",fontWeight:500}}>{jd.length} chars</span>
-                </div>
-                <textarea value={jd} onChange={e=>setJd(e.target.value)} rows={12}
-                  placeholder="Paste the full job description — title, responsibilities, required skills, mandatory qualifications..."/>
-              </div>
-
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-                <div>
-                  {!resumeText && <p style={{fontFamily:S,fontSize:"13px",color:"#fbbf24",fontWeight:600}}>↑ Upload your resume first</p>}
-                  {resumeText&&jd.length>0&&jd.length<80 && <p style={{fontFamily:S,fontSize:"13px",color:"#fbbf24",fontWeight:600}}>Paste the full JD for best results</p>}
-                </div>
-                <button className="btn-gold" onClick={tailor} disabled={!jd.trim()||jd.length<80||!resumeText||extracting} style={{fontSize:"15px",padding:"18px 44px"}}>
-                  Tailor My Resume <div className="arr">↗</div>
-                </button>
-              </div>
-
-              {error && (
-                <div style={{marginTop:20,padding:"14px 18px",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:12,animation:"fadeIn 0.3s"}}>
-                  <p style={{fontFamily:S,fontSize:"13px",color:"#f87171",fontWeight:500}}>{error}</p>
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {/* Loading */}
-        {(step==="analyzing"||step==="writing") && (
-          <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:60,animation:"fadeIn 0.4s"}}>
-            <div style={{textAlign:"center",maxWidth:560}}>
-              <div style={{width:50,height:50,border:"2px solid rgba(255,255,255,0.06)",borderTop:"2px solid #f5c842",borderRadius:"50%",margin:"0 auto 36px",animation:"spin 0.9s linear infinite"}}/>
-              <div className="slabel" style={{textAlign:"center"}}>
-                {step==="analyzing"?"Analysing"+".".repeat(dots+1):"Tailoring"+".".repeat(dots+1)}
-              </div>
-              <h2 className="shimmer-gold" style={{fontFamily:F,fontSize:"clamp(38px,6vw,68px)",fontWeight:900,lineHeight:0.92,marginBottom:16}}>
-                {step==="analyzing"?<span>Reading the<br/>job description.</span>:<span>Writing your<br/>tailored resume.</span>}
-              </h2>
-              <p style={{fontFamily:S,fontSize:"14px",color:"rgba(255,255,255,0.3)",marginBottom:40,fontWeight:400}}>
-                {step==="analyzing"?"Identifying mandatory skills, keywords, requirements":"Rewriting bullets, injecting keywords, reordering sections"}
-              </p>
-              <div className="load-bar"><div className="load-fill"/></div>
-              {keywords.length>0&&(
-                <div style={{marginTop:36}}>
-                  <div className="slabel" style={{textAlign:"center"}}>Keywords detected</div>
-                  <div>{keywords.map((k,i)=>visibleKw.includes(i)&&<span key={i} className="kw-chip" style={{animationDelay:`${i*0.07}s`}}>{k}</span>)}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Done */}
-        {step==="done"&&output&&(
-          <div style={{animation:"fadeIn 0.5s",paddingTop:80}}>
-            <section style={{padding:"80px 64px",maxWidth:1100,margin:"0 auto"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}>
-                <div style={{width:30,height:30,background:"rgba(74,222,128,0.12)",border:"1px solid rgba(74,222,128,0.35)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✓</div>
-                <span style={{fontFamily:S,fontSize:"12px",fontWeight:600,color:"#4ade80",letterSpacing:"0.08em",textTransform:"uppercase"}}>Resume tailored successfully</span>
-              </div>
-              <div className="dgrid" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:48,alignItems:"end",marginBottom:48}}>
-                <div>
-                  <h2 style={{fontFamily:F,fontSize:"clamp(48px,6.5vw,84px)",fontWeight:900,lineHeight:0.88,marginBottom:20}}>
-                    Your resume<br/>is <span className="shimmer-gold"><em>ready.</em></span>
-                  </h2>
-                  <p style={{fontFamily:S,fontSize:"15px",color:"rgba(255,255,255,0.38)",lineHeight:1.8,maxWidth:480,fontWeight:400}}>
-                    Copy the LaTeX → overleaf.com → New Project → Blank → Paste → Recompile → Download PDF → Apply.
-                  </p>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:200}}>
-                  <button className={`btn-cp ${copied?"done":""}`} style={{padding:"14px 28px",fontSize:"14px"}} onClick={copy}>{copied?"✓ Copied!":"Copy LaTeX Code"}</button>
-                  <button className="btn-wire" onClick={reset} style={{fontSize:"13px",padding:"11px 20px"}}>← New job description</button>
-                  <button className="btn-wire" onClick={resetAll} style={{fontSize:"13px",padding:"11px 20px"}}>← Upload new resume</button>
-                </div>
-              </div>
-            </section>
-
-            <div style={{borderTop:"1px solid rgba(255,230,150,0.08)",borderBottom:"1px solid rgba(255,230,150,0.08)",padding:"32px 64px",maxWidth:1100,margin:"0 auto"}}>
-              <div className="slabel">JD keywords injected</div>
-              {keywords.map((k,i)=><span key={i} className="kw-chip">{k}</span>)}
-            </div>
-
-            <div style={{padding:"28px 64px",background:"rgba(255,230,150,0.02)",borderBottom:"1px solid rgba(255,230,150,0.06)"}}>
-              <div style={{maxWidth:1100,margin:"0 auto",display:"flex",gap:24,flexWrap:"wrap",alignItems:"center"}}>
-                <span style={{fontFamily:S,fontSize:"11px",fontWeight:600,color:"rgba(255,230,150,0.25)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Next</span>
-                {["Copy LaTeX","overleaf.com","New Project → Blank","Paste → Recompile","Download PDF","Apply!"].map((s,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontFamily:F,fontSize:"16px",color:"rgba(245,200,66,0.35)",fontWeight:700}}>{i+1}.</span>
-                    <span style={{fontFamily:S,fontSize:"13px",fontWeight:500,color:"rgba(255,255,255,0.35)"}}>{s}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{maxWidth:1100,margin:"0 auto",padding:"48px 64px 80px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <div className="slabel" style={{marginBottom:0}}>LaTeX Source</div>
-                <button className={`btn-cp ${copied?"done":""}`} style={{padding:"8px 20px",fontSize:"12px"}} onClick={copy}>{copied?"✓ Copied":"Copy"}</button>
-              </div>
-              <div className="code-out">{output}</div>
-            </div>
-          </div>
-        )}
+      {/* ── MARQUEE ── */}
+      <div className="mq">
+        <div className="mq-track">
+          {[...MARQUEE, ...MARQUEE].map((t, i) => (
+            <span key={i}><span className="mq-item">{t}</span><span className="mq-sep">◆</span></span>
+          ))}
+        </div>
       </div>
 
-      <footer style={{borderTop:"1px solid rgba(255,230,150,0.07)",padding:"28px 64px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,position:"relative",zIndex:10}}>
-        <span style={{fontFamily:F,fontSize:"18px",fontWeight:700,color:"rgba(255,255,255,0.25)",fontStyle:"italic"}}>ResumeAI</span>
-        <span style={{fontFamily:S,fontSize:"11px",color:"rgba(255,255,255,0.18)",fontWeight:500}}>Free to use · Runs securely on our server</span>
+      {/* ── INTRO ── */}
+      <div className="s-pad" style={{ padding: "130px 56px", maxWidth: 1200, margin: "0 auto" }}>
+        <div data-id="intro" className={vis("intro")} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 96, alignItems: "end" }}>
+          <div>
+            <div className="lbl">The Method</div>
+            <h2 className="dt">
+              Keyword precision.<br /><em>Human clarity.</em><br />Every time.
+            </h2>
+          </div>
+          <div>
+            <p className="bt" style={{ marginBottom: 24 }}>
+              Most resumes fail not because of experience, but because they don't speak the language of the role. Our system reads the job description, extracts every requirement, and rewrites your resume to match — precisely and intelligently.
+            </p>
+            <p className="bt">
+              The output is a clean LaTeX document built on the industry-standard Jake Gutierrez template. Paste it into Overleaf, compile, and apply.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="div" />
+
+      {/* ── PROCESS ── */}
+      <div id="process" style={{ paddingTop: 120, paddingBottom: 0 }}>
+        <div className="s-pad" style={{ padding: "0 56px 60px", maxWidth: 1200, margin: "0 auto" }}>
+          <div data-id="pl" className={vis("pl")}>
+            <div className="lbl">How It Works</div>
+            <h2 className="dt"><em>Four steps.</em><br />One perfect resume.</h2>
+          </div>
+        </div>
+        <div
+          className="pg"
+          data-id="pg"
+          style={{
+            opacity: sectionsVisible["pg"] ? 1 : 0,
+            transform: sectionsVisible["pg"] ? "none" : "translateY(28px)",
+            transition: "opacity 1s cubic-bezier(0.16,1,0.3,1) 0.15s, transform 1s cubic-bezier(0.16,1,0.3,1) 0.15s"
+          }}
+        >
+          {[
+            { n: "I",   num: "01", t: "Upload",   d: "Drop your current resume — PDF or plain text. Any format, any industry, any career stage." },
+            { n: "II",  num: "02", t: "Describe", d: "Paste the complete job description. Every word matters. The more detail you provide, the more precise the output." },
+            { n: "III", num: "03", t: "Tailored", d: "Claude analyses both documents simultaneously. Keywords extracted, bullets rewritten, sections reordered for maximum relevance." },
+            { n: "IV",  num: "04", t: "Apply",    d: "Copy the LaTeX source. Open Overleaf. Paste and recompile. Download your PDF. Send. Done in under two minutes." },
+          ].map((s, i) => (
+            <div key={i} className="pi">
+              <div className="pi-n">{s.n}</div>
+              <div className="pi-label">{s.num}</div>
+              <div className="pi-title">{s.t}</div>
+              <p className="pi-body">{s.d}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="div" style={{ marginTop: 0 }} />
+
+      {/* ── FORM ── */}
+      {step === "idle" && (
+        <div id="form" className="s-pad" style={{ padding: "130px 56px", maxWidth: 960, margin: "0 auto" }}>
+
+          {/* Resume upload */}
+          <div data-id="f1" className={vis("f1")} style={{ marginBottom: 88 }}>
+            <div className="lbl" style={{ marginBottom: 36 }}>01 — Resume</div>
+            {!resumeText ? (
+              <label
+                className={`uz${dragOver ? " dg" : ""}`}
+                style={{ display: "block" }}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+              >
+                <input ref={fileRef} type="file" accept=".pdf,.txt" onChange={e => processFile(e.target.files[0])} style={{ display: "none" }} />
+                {extracting ? (
+                  <div>
+                    <div style={{ width: 1, height: 44, background: "rgba(255,255,255,0.12)", margin: "0 auto 28px" }} />
+                    <p style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "22px", fontWeight: 300, fontStyle: "italic", color: "rgba(255,255,255,0.4)" }}>
+                      Reading document...
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ width: 1, height: 44, background: "rgba(255,255,255,0.12)", margin: "0 auto 28px" }} />
+                    <p style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "30px", fontWeight: 300, color: "rgba(255,255,255,0.55)", marginBottom: 14, letterSpacing: "0.01em" }}>
+                      Place your resume here
+                    </p>
+                    <p style={{ fontFamily: "'Jost',sans-serif", fontSize: "10px", fontWeight: 300, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)" }}>
+                      PDF or TXT · Click or drag to upload
+                    </p>
+                  </div>
+                )}
+              </label>
+            ) : (
+              <div style={{ border: "1px solid rgba(74,222,128,0.25)", padding: "32px 40px", display: "flex", justifyContent: "space-between", alignItems: "center", animation: "fadeIn 0.5s", background: "rgba(74,222,128,0.02)" }}>
+                <div>
+                  <div className="lbl" style={{ color: "rgba(74,222,128,0.5)", marginBottom: 10 }}>Document Loaded</div>
+                  <p style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "24px", fontWeight: 300, color: "#fff" }}>{resumeFileName}</p>
+                  <p style={{ fontFamily: "'Jost',sans-serif", fontSize: "10px", color: "rgba(255,255,255,0.18)", marginTop: 8, letterSpacing: "0.08em" }}>
+                    {resumeText.length.toLocaleString()} characters extracted
+                  </p>
+                </div>
+                <button className="bs" onClick={resetAll}>Replace</button>
+              </div>
+            )}
+          </div>
+
+          {/* JD */}
+          <div data-id="f2" className={vis("f2")} style={{ marginBottom: 56 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 36 }}>
+              <div className="lbl" style={{ marginBottom: 0 }}>02 — Position</div>
+              <span style={{ fontFamily: "'Jost',sans-serif", fontSize: "10px", color: "rgba(255,255,255,0.14)", letterSpacing: "0.08em" }}>
+                {jd.length} characters
+              </span>
+            </div>
+            <textarea
+              value={jd}
+              onChange={e => setJd(e.target.value)}
+              rows={13}
+              placeholder="Paste the complete job description — role, responsibilities, requirements, qualifications..."
+            />
+          </div>
+
+          {/* Submit */}
+          <div data-id="f3" className={vis("f3")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+            <div>
+              {!resumeText && (
+                <p style={{ fontFamily: "'Jost',sans-serif", fontSize: "10px", color: "rgba(255,255,255,0.22)", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+                  Upload your resume to proceed
+                </p>
+              )}
+              {resumeText && jd.length > 0 && jd.length < 80 && (
+                <p style={{ fontFamily: "'Jost',sans-serif", fontSize: "10px", color: "rgba(255,255,255,0.22)", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+                  Paste the complete job description
+                </p>
+              )}
+            </div>
+            <button className="bp" onClick={tailor} disabled={!jd.trim() || jd.length < 80 || !resumeText || extracting}>
+              Tailor Resume <div className="bp-ln" />
+            </button>
+          </div>
+
+          {error && (
+            <div style={{ marginTop: 36, borderLeft: "1px solid rgba(239,68,68,0.35)", paddingLeft: 20, animation: "fadeIn 0.3s" }}>
+              <p style={{ fontFamily: "'Jost',sans-serif", fontSize: "11px", color: "rgba(239,68,68,0.6)", letterSpacing: "0.06em" }}>{error}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PROCESSING ── */}
+      {step === "processing" && (
+        <div style={{ minHeight: "80vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: "120px 56px", maxWidth: 960, margin: "0 auto", animation: "fadeIn 0.5s" }}>
+          <div className="lbl" style={{ marginBottom: 36 }}>
+            {processingPhase === "analyzing" ? "Analysing" : "Writing"}{".".repeat(dots + 1)}
+          </div>
+          <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "clamp(44px,6vw,88px)", fontWeight: 300, lineHeight: 0.9, marginBottom: 0, letterSpacing: "-0.01em" }}>
+            {processingPhase === "analyzing" ? <><em>Analysing</em><br />the role.</> : <><em>Writing</em><br />your resume.</>}
+          </h2>
+          <div className="lb"><div className="lf" /></div>
+          {keywords.length > 0 && (
+            <div>
+              <div className="lbl" style={{ marginBottom: 28 }}>Terminology Extracted</div>
+              <div className="kw-flow">
+                {keywords.map((k, i) => visibleKw.includes(i) && (
+                  <span key={i} className="kw-t" style={{ animationDelay: `${i * 0.06}s` }}>{k}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DONE ── */}
+      {step === "done" && output && (
+        <div style={{ animation: "fadeIn 0.6s" }}>
+
+          <div className="s-pad" style={{ padding: "130px 56px", maxWidth: 1200, margin: "0 auto" }}>
+            <div data-id="d1" className={vis("d1")}>
+              <div className="lbl" style={{ marginBottom: 36 }}>Resume Complete</div>
+              <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "clamp(52px,8vw,104px)", fontWeight: 300, lineHeight: 0.88, letterSpacing: "-0.015em", marginBottom: 64 }}>
+                Your resume<br />is <em>ready.</em>
+              </h2>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <button className={`bcp${copied ? " ok" : ""}`} onClick={copy}>
+                  {copied ? "Copied to Clipboard" : "Copy LaTeX Source"}
+                </button>
+                <button className="bs" onClick={reset}>New Position</button>
+                <button className="bs" onClick={resetAll}>New Resume</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="div" />
+
+          {/* Keywords — VAST, no box */}
+          <div className="s-pad" style={{ padding: "96px 56px", maxWidth: 1200, margin: "0 auto" }} data-id="d2" className={vis("d2")}>
+            <div className="lbl" style={{ marginBottom: 36 }}>Keywords Injected into Your Resume</div>
+            <div className="kw-flow">
+              {keywords.map((k, i) => (
+                <span key={i} className="kw-t">{k}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="div" />
+
+          {/* Steps */}
+          <div className="s-pad" style={{ padding: "80px 56px", maxWidth: 1200, margin: "0 auto" }} data-id="d3" className={vis("d3")}>
+            <div className="lbl" style={{ marginBottom: 36 }}>To Compile Your PDF</div>
+            <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
+              {["Copy the LaTeX source", "Open overleaf.com", "New Project — Blank", "Paste entire source", "Click Recompile", "Download your PDF"].map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+                  <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "14px", color: "rgba(255,255,255,0.14)", fontStyle: "italic", flexShrink: 0 }}>{i + 1}.</span>
+                  <span style={{ fontFamily: "'Jost',sans-serif", fontSize: "12px", fontWeight: 300, color: "rgba(255,255,255,0.32)", letterSpacing: "0.06em" }}>{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="div" />
+
+          {/* Code */}
+          <div className="s-pad" style={{ padding: "80px 56px 120px", maxWidth: 1200, margin: "0 auto" }} data-id="d4" className={vis("d4")}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+              <div className="lbl" style={{ marginBottom: 0 }}>LaTeX Source</div>
+              <button className={`bcp${copied ? " ok" : ""}`} style={{ padding: "10px 24px" }} onClick={copy}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <div className="cb">{output}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FOOTER ── */}
+      <div className="div" />
+      <footer style={{ padding: "56px 56px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }} className="footer">
+        <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "17px", fontWeight: 300, color: "rgba(255,255,255,0.18)", letterSpacing: "0.25em", textTransform: "uppercase", fontStyle: "italic" }}>
+          Resume AI
+        </span>
+        <span style={{ fontFamily: "'Jost',sans-serif", fontSize: "9px", fontWeight: 300, color: "rgba(255,255,255,0.12)", letterSpacing: "0.22em", textTransform: "uppercase" }}>
+          Designed &amp; Built by Suraj Ballamudi
+        </span>
+        <span style={{ fontFamily: "'Jost',sans-serif", fontSize: "9px", fontWeight: 300, color: "rgba(255,255,255,0.1)", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+          Free · Secure · No Account Required
+        </span>
       </footer>
     </div>
   );
