@@ -291,7 +291,8 @@ export default function App() {
           display:flex; flex-direction:column; align-items:center; gap:14px;
           font-family:'Jost',sans-serif; font-size:9px; font-weight:300;
           letter-spacing:0.28em; text-transform:uppercase;
-          color:rgba(255,255,255,0.22);
+          color:rgba(255,255,255,0.35
+          );
         }
         .scroll-l { width:1px; transform-origin:top; animation:lineGrow 1.2s 1.8s cubic-bezier(0.16,1,0.3,1) both; background:rgba(255,255,255,0.18); }
 
@@ -299,15 +300,15 @@ export default function App() {
         .div { width:100%; height:1px; background:rgba(255,255,255,0.06); }
 
         /* Marquee */
-        .mq { overflow:hidden; border-top:1px solid rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.05); padding:14px 0; }
+        .mq { overflow:hidden; border-top:1px solid rgba(255,255,255,0.12); border-bottom:1px solid rgba(255,255,255,0.12); padding:14px 0; background:#0a0a0a; }
         .mq-track { display:flex; white-space:nowrap; animation:marquee 30s linear infinite; }
-        .mq-item { padding:0 44px; font-family:'Jost',sans-serif; font-size:9px; font-weight:300; letter-spacing:0.26em; text-transform:uppercase; color:rgba(255,255,255,0.16); }
+        .mq-item { padding:0 44px; font-family:'Jost',sans-serif; font-size:9px; font-weight:300; letter-spacing:0.26em; text-transform:uppercase; color:rgba(255,255,255,0.45); }
         .mq-sep { color:rgba(255,255,255,0.1); padding:0 4px; font-size:5px; }
 
         /* Section labels */
         .lbl {
           font-family:'Jost',sans-serif; font-size:9px; font-weight:300;
-          letter-spacing:0.3em; text-transform:uppercase; color:rgba(255,255,255,0.22);
+          letter-spacing:0.3em; text-transform:uppercase; color:rgba(255,255,255,0.45);
           display:flex; align-items:center; gap:18px; margin-bottom:28px;
         }
         .lbl::before { content:''; display:block; width:28px; height:1px; background:rgba(255,255,255,0.18); flex-shrink:0; }
@@ -321,7 +322,7 @@ export default function App() {
         .dt em { font-style:italic; }
         .bt {
           font-family:'Jost',sans-serif; font-size:13px; font-weight:300;
-          letter-spacing:0.04em; color:rgba(255,255,255,0.35); line-height:1.9;
+          letter-spacing:0.04em; color:rgba(255,255,255,0.5); line-height:1.9;
         }
 
         /* Buttons */
@@ -371,7 +372,7 @@ export default function App() {
 
         /* Upload */
         .uz {
-          border:1px solid rgba(255,255,255,0.1);
+          border:1px solid rgba(255,255,255,0.22);
           padding:88px 40px; text-align:center; cursor:pointer;
           transition:all 0.4s cubic-bezier(0.16,1,0.3,1);
           background:transparent; position:relative;
@@ -388,7 +389,7 @@ export default function App() {
         /* Process grid */
         .pg { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:rgba(255,255,255,0.05); }
         .pi {
-          background:#020202; padding:44px 32px 40px;
+          background:#080808; padding:44px 32px 40px;
           transition:background 0.3s;
           cursor:default;
         }
@@ -446,7 +447,7 @@ export default function App() {
           padding:22px 26px; resize:vertical;
           transition:border-color 0.3s, background 0.3s;
         }
-        textarea:focus, input:focus { border-color:rgba(255,255,255,0.35); }
+        textarea:focus, input:focus { border-color:rgba(255,255,255,0.45); }
         textarea:focus { background:rgba(255,255,255,0.02); }
         textarea::placeholder, input::placeholder {
           color:rgba(255,255,255,0.14); font-style:italic;
@@ -484,7 +485,7 @@ export default function App() {
         <div className="hero-img" />
         <div className="hero-ov" />
         <div className="hero-body">
-          <p className="h-eye">Precision Resume Engineering — Claude AI</p>
+          <p className="h-eye">Precision Resume Engineering</p>
           <h1 className="h-title">
             A tailored<br />resume for<br /><em>every role.</em>
           </h1>
